@@ -1,3 +1,5 @@
+from transformers import AutoTokenizer
+
 from sklearn.model_selection import train_test_split
 from tokenize_data import get_tokenized_data
 import json
@@ -39,6 +41,18 @@ def save_split_data(train_ids: list, val_ids: list):
     # Save the dataset as a JSON file
     with open("codebase_dataset.json", "w", encoding="utf-8") as f:
         json.dump(dataset, f, ensure_ascii=False, indent=4)
+
+    # Save training data as plain text
+    tokenizer = AutoTokenizer.from_pretrained("meta-llama/LLaMA-3.2-3B")
+
+    with open("train.txt", "w", encoding="utf-8") as f:
+        for ids in train_ids:
+            f.write(tokenizer.decode(ids) + "\n")
+
+    # Save validation data as plain text
+    with open("val.txt", "w", encoding="utf-8") as f:
+        for ids in val_ids:
+            f.write(tokenizer.decode(ids) + "\n")
 
 def split_and_save_data(data_path: str, test_size: float = 0.1):
     """
