@@ -51,4 +51,4 @@ def split_and_save_data(data_path: str, test_size: float = 0.1):
     save_split_data(data_path, train_ids, val_ids)
 
 if __name__ == "__main__":
-    get_split_data("./data/codebase.txt")
+    split_and_save_data("./data/codebase.txt")
