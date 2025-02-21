@@ -1,0 +1,483 @@
+Directory Structure:
+
+└── ./
+    ├── data_utils.py
+    ├── main.py
+    ├── model_utils.py
+    ├── plot_utils.py
+    ├── README.md
+    └── requirements.txt
+
+
+
+---
+File: /data_utils.py
+---
+
+import os
+import urllib.request
+import zipfile
+import numpy as np
+import cv2
+
+def download_and_extract_data(url, dest_folder, zip_name='complete_ms_data.zip'):
+    """
+    Download and extract data if it doesn't already exist.
+    
+    Args:
+        url (str): URL to download the zip file.
+        dest_folder (str): Destination folder to extract the contents.
+        zip_name (str): Name of the zip file.
+    """
+    if not os.path.exists(dest_folder):
+        os.makedirs(dest_folder)
+        
+    zip_path = os.path.join(dest_folder, zip_name)
+    
+    if not os.path.exists(zip_path):
+        print("Downloading data...")
+        urllib.request.urlretrieve(url, zip_path)
+        print("Download completed.")
+
+        print("Extracting data...")
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(dest_folder)
+        print("Extraction completed.")
+    else:
+        print("Data already downloaded and extracted.")
+
+def load_and_preprocess_images(root_folder, target_size):
+    cropped_images = []
+    for subdir in os.listdir(root_folder):
+        subdir_path = os.path.join(root_folder, subdir)
+        if not os.path.isdir(subdir_path):
+            continue
+
+        for subdir2 in os.listdir(subdir_path):
+            subdir2_path = os.path.join(subdir_path, subdir2)
+            if not os.path.isdir(subdir2_path):
+                continue
+
+            stacked_img = np.empty([512, 512, 31])
+            for i in range(1, 32):
+                img_path = os.path.join(subdir2_path, f"{subdir2}_{i:02d}.png")
+                img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+                stacked_img[:, :, i-1] = img
+
+            # Extract crops
+            for h in range(0, 512 - target_size + 1, target_size // 2):
+                for w in range(0, 512 - target_size + 1, target_size // 2):
+                    cropped_img = stacked_img[h:h + target_size, w:w + target_size, :]
+                    cropped_images.append(cropped_img)
+
+    return np.array(cropped_images)
+
+def generate_low_res_hsi_and_high_res_rgb(cropped_images):
+    LowResHSI = []
+    HiResRGB = []
+
+    for img in cropped_images:
+        # Low-resolution HSI
+        low_res_img = cv2.resize(img, (8, 8), interpolation=cv2.INTER_AREA)
+        LowResHSI.append(low_res_img)
+
+        # High-resolution RGB
+        high_res_img = np.zeros((64, 64, 3))
+        for i in range(3):
+            high_res_img[:, :, i] = np.mean(img[:, :, i*10:(i+1)*10], axis=2)
+        HiResRGB.append(high_res_img)
+
+    return np.array(LowResHSI), np.array(HiResRGB)
+
+def normalize_data(X_low_res_hsi_train, X_low_res_hsi_test, X_hi_res_rgb_train, X_hi_res_rgb_test, y_train, y_test):
+    max_pixel_value = 255
+    X_low_res_hsi_train = X_low_res_hsi_train / max_pixel_value
+    X_low_res_hsi_test = X_low_res_hsi_test / max_pixel_value
+    X_hi_res_rgb_train = X_hi_res_rgb_train / max_pixel_value
+    X_hi_res_rgb_test = X_hi_res_rgb_test / max_pixel_value
+    y_train = y_train / max_pixel_value
+    y_test = y_test / max_pixel_value
+
+    return X_low_res_hsi_train, X_low_res_hsi_test, X_hi_res_rgb_train, X_hi_res_rgb_test, y_train, y_test
+
+
+
+---
+File: /main.py
+---
+
+import os
+import argparse
+import tensorflow as tf
+from data_utils import download_and_extract_data, load_and_preprocess_images, generate_low_res_hsi_and_high_res_rgb, normalize_data
+from model_utils import create_model
+from plot_utils import plot_history, plot_predictions
+from sklearn.model_selection import train_test_split
+from keras.models import load_model
+from keras.callbacks import ModelCheckpoint
+
+def main(model_path, batch_size, epochs, learning_rate, filters, blocks, save_every):
+    # Check if TensorFlow is using GPU
+    physical_devices = tf.config.list_physical_devices('GPU')
+    if physical_devices:
+        print(f"GPUs available: {len(physical_devices)}")
+        for device in physical_devices:
+            print(f"Device: {device}")
+    else:
+        print("No GPU available, using CPU instead.")
+
+    data_url = 'https://www1.cs.columbia.edu/CAVE/databases/multispectral/zip/complete_ms_data.zip'
+    root_folder = 'complete_ms_data'
+    target_size = 64
+
+    # Download and extract data
+    download_and_extract_data(data_url, root_folder)
+
+    # Load and preprocess images
+    cropped_images = load_and_preprocess_images(root_folder, target_size)
+    LowResHSI, HiResRGB = generate_low_res_hsi_and_high_res_rgb(cropped_images)
+
+    y = cropped_images
+    X_low_res_hsi = LowResHSI
+    X_hi_res_rgb = HiResRGB
+
+    X_low_res_hsi_train, X_low_res_hsi_test, y_train, y_test = train_test_split(X_low_res_hsi, y, test_size=0.2, random_state=42)
+    X_hi_res_rgb_train, X_hi_res_rgb_test = train_test_split(X_hi_res_rgb, test_size=0.2, random_state=42)
+
+    X_low_res_hsi_train, X_low_res_hsi_test, X_hi_res_rgb_train, X_hi_res_rgb_test, y_train, y_test = normalize_data(
+        X_low_res_hsi_train, X_low_res_hsi_test, X_hi_res_rgb_train, X_hi_res_rgb_test, y_train, y_test)
+
+    history = None  # Initialize history variable
+
+    if model_path and os.path.exists(model_path):
+        try:
+            print(f"Loading model from {model_path}...")
+            model = load_model(model_path)
+        except Exception as e:
+            print(f"Error loading model: {e}")
+            print("Training a new model instead...")
+            model, history = create_and_train_model(X_hi_res_rgb_train, X_low_res_hsi_train, y_train, X_hi_res_rgb_test, X_low_res_hsi_test, y_test, model_path, batch_size, epochs, learning_rate, filters, blocks, save_every)
+    else:
+        print("Training new model...")
+        model, history = create_and_train_model(X_hi_res_rgb_train, X_low_res_hsi_train, y_train, X_hi_res_rgb_test, X_low_res_hsi_test, y_test, model_path, batch_size, epochs, learning_rate, filters, blocks, save_every)
+
+    # Evaluate the model on the testing set
+    loss, accuracy = model.evaluate([X_hi_res_rgb_test, X_low_res_hsi_test], y_test)
+    print("Test loss:", loss)
+    print("Test accuracy:", accuracy)
+
+    # Ensure the save_path directory exists
+    save_path = 'plots'
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+
+    # Make predictions and plot them
+    predictions = model.predict([X_hi_res_rgb_test, X_low_res_hsi_test])
+    plot_predictions(predictions, y_test, num_samples=10, save_path=save_path)  # Save the plots
+
+    # Plot training history if available
+    if history is not None:
+        plot_history(history, save_path=save_path)  # Save the plots
+
+def create_and_train_model(X_hi_res_rgb_train, X_low_res_hsi_train, y_train, X_hi_res_rgb_test, X_low_res_hsi_test, y_test, model_path, batch_size, epochs, learning_rate, filters, blocks, save_every):
+    model = create_model(filters, blocks, learning_rate)
+    model.summary()
+
+    callbacks = []
+    if save_every:
+        steps_per_epoch = len(X_hi_res_rgb_train) // batch_size
+        save_freq = steps_per_epoch * save_every
+        checkpoint_path = model_path.replace('.h5', '_epoch_{epoch:02d}.h5')
+        checkpoint_callback = ModelCheckpoint(checkpoint_path, save_weights_only=False, save_freq=save_freq)
+        callbacks.append(checkpoint_callback)
+
+    history = model.fit(
+        [X_hi_res_rgb_train, X_low_res_hsi_train],
+        y_train,
+        batch_size=batch_size,
+        epochs=epochs,
+        validation_data=([X_hi_res_rgb_test, X_low_res_hsi_test], y_test),
+        callbacks=callbacks
+    )
+
+    if not save_every:
+        model.save(model_path)
+        print(f"Model saved to {model_path}")
+
+    return model, history
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Train or load a superresolution model.')
+    parser.add_argument('--model_path', type=str, default='my_model.h5', help='Path to the model file to load.')
+    parser.add_argument('--batch_size', type=int, default=32, help='Batch size for training.')
+    parser.add_argument('--epochs', type=int, default=10, help='Number of epochs for training.')
+    parser.add_argument('--learning_rate', type=float, default=0.0001, help='Learning rate for the optimizer.')
+    parser.add_argument('--filters', type=int, default=64, help='Number of filters for the convolutional layers.')
+    parser.add_argument('--blocks', type=int, default=3, help='Number of residual blocks in the encoder and decoder.')
+    parser.add_argument('--save_every', type=int, default=0, help='Save the model every specified number of epochs. If 0, save only at the end.')
+
+    args = parser.parse_args()
+    main(model_path=args.model_path, batch_size=args.batch_size, epochs=args.epochs, learning_rate=args.learning_rate, filters=args.filters, blocks=args.blocks, save_every=args.save_every)
+
+
+
+---
+File: /model_utils.py
+---
+
+from keras.models import Model
+from keras.layers import Input, Conv2D, MaxPooling2D, Conv2DTranspose, concatenate, UpSampling2D
+from keras.layers import BatchNormalization, Dropout, LeakyReLU, Add, Dense, Flatten, Reshape, Multiply, GlobalAveragePooling2D
+from keras.optimizers import Adam
+
+def create_residual_block(input_layer, num_filters, kernel_size=(3, 3)):
+    x = Conv2D(num_filters, kernel_size, padding='same')(input_layer)
+    x = BatchNormalization()(x)
+    x = LeakyReLU()(x)
+    x = Conv2D(num_filters, kernel_size, padding='same')(x)
+    x = BatchNormalization()(x)
+    if input_layer.shape[-1] != num_filters:
+        input_layer = Conv2D(num_filters, (1, 1), padding='same')(input_layer)
+    return Add()([input_layer, x])
+
+def create_attention_block(input_layer, num_filters):
+    avg_pool = GlobalAveragePooling2D()(input_layer)
+    dense1 = Dense(num_filters // 8, activation='relu')(avg_pool)
+    dense2 = Dense(num_filters, activation='sigmoid')(dense1)
+    scale = Multiply()([input_layer, Reshape((1, 1, num_filters))(dense2)])
+    return scale
+
+def encoder(input_layer, num_filters, num_blocks):
+    x = Conv2D(num_filters, (3, 3), padding='same')(input_layer)
+    x = BatchNormalization()(x)
+    x = LeakyReLU()(x)
+    
+    for _ in range(num_blocks):
+        x = create_residual_block(x, num_filters)
+        x = create_attention_block(x, num_filters)
+    
+    x = MaxPooling2D(pool_size=(2, 2))(x)
+    return x
+
+def decoder(input_layer, num_filters, num_blocks):
+    x = UpSampling2D(size=(2, 2))(input_layer)
+    
+    for _ in range(num_blocks):
+        x = create_residual_block(x, num_filters)
+        x = create_attention_block(x, num_filters)
+    
+    x = Conv2DTranspose(num_filters, (3, 3), padding='same')(x)
+    x = BatchNormalization()(x)
+    x = LeakyReLU()(x)
+    return x
+
+def create_model(filters, blocks, learning_rate):
+    hi_res_rgb_input = Input(shape=(64, 64, 3))
+    low_res_hsi_input = Input(shape=(8, 8, 31))
+
+    rgb_branch = encoder(hi_res_rgb_input, filters, blocks)
+    upsampled_hsi_branch = UpSampling2D(size=(8, 8))(low_res_hsi_input)
+    hsi_branch = encoder(upsampled_hsi_branch, filters, blocks)
+    
+    fused = concatenate([rgb_branch, hsi_branch])
+    
+    decoder_output = decoder(fused, filters * 2, blocks)  # Adjusted num_filters to match encoder output
+    output = Conv2D(31, (3, 3), activation='sigmoid', padding='same')(decoder_output)
+
+    model = Model(inputs=[hi_res_rgb_input, low_res_hsi_input], outputs=[output])
+    optimizer = Adam(learning_rate=learning_rate)
+    model.compile(optimizer=optimizer, loss='mean_squared_error', metrics=['accuracy'])
+
+    return model
+
+
+
+---
+File: /plot_utils.py
+---
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+def plot_history(history, save_path=None):
+    plt.figure(figsize=(12, 6))
+    plt.plot(history.history['loss'])
+    plt.plot(history.history['val_loss'])
+    plt.title('Model loss')
+    plt.ylabel('Loss')
+    plt.xlabel('Epoch')
+    plt.legend(['Train', 'Validation'], loc='upper right')
+    
+    if save_path:
+        plt.savefig(f'{save_path}/loss.png')
+    else:
+        plt.show()
+    
+    plt.figure(figsize=(8, 6))
+    plt.plot(history.history['accuracy'], label='Training Accuracy')
+    plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+    plt.title('Training and Validation Accuracy')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    
+    if save_path:
+        plt.savefig(f'{save_path}/accuracy.png')
+    else:
+        plt.show()
+
+def plot_predictions(predictions, y_test, num_samples=10, save_path=None):
+    max_pixel_value = 255
+    y_test_adj = y_test * max_pixel_value
+    predictions_adj = predictions * max_pixel_value
+
+    y_test_adj_avg = np.mean(y_test_adj[:, :, :, :3], axis=-1)
+    predictions_adj_avg = np.mean(predictions_adj[:, :, :, :3], axis=-1)
+
+    # Randomly select num_samples indices
+    indices = np.random.choice(len(y_test_adj), num_samples, replace=False)
+
+    fig, axs = plt.subplots(2, num_samples, figsize=(num_samples * 2, 4))
+    for i, idx in enumerate(indices):
+        axs[0, i].imshow(y_test_adj_avg[idx, :, :].astype(int), cmap='gray')
+        axs[0, i].set_title('Ground Truth')
+        axs[0, i].axis('off')
+        
+        axs[1, i].imshow(predictions_adj_avg[idx, :, :].astype(int), cmap='gray')
+        axs[1, i].set_title('Prediction')
+        axs[1, i].axis('off')
+        
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(f'{save_path}/predictions.png')
+    else:
+        plt.show()
+
+
+
+---
+File: /README.md
+---
+
+# HyperResNet: SuperResolution Using Machine Learning
+
+This project aims to achieve superresolution using machine learning models. Superresolution is a technique to enhance image resolution by combining information from multiple images of the same scene. In this project, we use RGB images with high spatial resolution and hyperspectral images with high spectral resolution to create images with both high spatial and spectral resolution.
+
+## Dataset
+
+The dataset used in this project is the CAVE multispectral image dataset by Columbia University. The dataset can be downloaded from [this link](https://www1.cs.columbia.edu/CAVE/databases/multispectral/zip/complete_ms_data.zip).
+
+## Project Structure
+
+- `data_utils.py`: Functions related to data downloading, loading, and preprocessing.
+- `model_utils.py`: Functions related to model creation and training.
+- `plot_utils.py`: Functions related to plotting and visualizations.
+- `main.py`: The main script that orchestrates the workflow.
+
+## Installation
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/itsitgroup/HyperResNet.git
+   cd HyperResNet
+   ```
+
+2. Create a virtual environment and activate it:
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate  # On Windows use `venv\Scripts\activate`
+   ```
+
+3. Install the required dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+## Usage
+
+<a target="_blank" href="https://colab.research.google.com/github/itsitgroup/HyperResNet/blob/main/HyperResNet.ipynb">
+<img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
+</a>
+
+### Command Line Arguments
+
+You can customize the training process by using the following command-line arguments:
+
+- `--model_path`: Path to save or load the model (default: `my_model.h5`).
+- `--batch_size`: Batch size for training (default: `32`).
+- `--epochs`: Number of epochs for training (default: `10`).
+- `--learning_rate`: Learning rate for the optimizer (default: `0.0001`).
+- `--filters`: Number of filters for the convolutional layers (default: `64`).
+- `--blocks`: Number of residual blocks in the encoder and decoder (default: `3`).
+- `--save_every`: Save the model every specified number of epochs. If `0`, save only at the end (default: `0`).
+
+### Examples
+
+1. Run the script with default values:
+   ```bash
+   python main.py --model_path my_model.h5
+   ```
+
+2. Specify custom hyperparameters and save the model every 5 epochs:
+   ```bash
+   python main.py --model_path my_model.h5 --batch_size 64 --epochs 20 --learning_rate 0.001 --filters 128 --blocks 4 --save_every 5
+   ```
+
+## Functions
+
+### Data Utils
+
+- `download_and_extract_data(url, dest_folder, zip_name='complete_ms_data.zip')`: Downloads and extracts the dataset.
+- `load_and_preprocess_images(root_folder, target_size)`: Loads and preprocesses images.
+- `generate_low_res_hsi_and_high_res_rgb(cropped_images)`: Generates low-resolution HSI and high-resolution RGB images.
+- `normalize_data(...)`: Normalizes the data.
+
+### Model Utils
+
+- `create_model()`: Creates the superresolution model using residual and attention blocks.
+
+### Plot Utils
+
+- `plot_history(history)`: Plots training and validation loss.
+- `plot_predictions(predictions, y_test)`: Plots ground truth and predicted images.
+
+## Results
+
+The model will output high-resolution hyperspectral images. Training and validation loss, as well as accuracy, will be plotted. Predictions will be compared to the ground truth images.
+
+### requirements.txt
+
+```plaintext
+numpy
+opencv-python
+keras
+tensorflow
+matplotlib
+```
+
+### Directory Structure
+
+Your project directory should look like this:
+
+```
+superresolution-ml/
+│
+├── data_utils.py
+├── model_utils.py
+├── plot_utils.py
+├── main.py
+├── README.md
+└── requirements.txt
+```
+
+
+---
+File: /requirements.txt
+---
+
+opencv-python
+keras
+tensorflow
+matplotlib
+
