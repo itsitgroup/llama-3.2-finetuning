@@ -18,7 +18,7 @@ def tokenize_codebase(codebase: str, tokenizer: AutoTokenizer) -> dict:
     return tokenized_data
 
 
-def get_tokenized_data(code_base_path: str) -> dict:
+def get_tokenized_data(data_path: str) -> dict:
     """
     Get the tokenized data for a given codebase file.
     Args:
@@ -30,7 +30,7 @@ def get_tokenized_data(code_base_path: str) -> dict:
     tokenizer = AutoTokenizer.from_pretrained("meta-llama/LLaMA-3.2-3B")
 
     # Read the codebase from the .txt file
-    with open(code_base_path, "r", encoding="utf-8") as f:
+    with open(data_path, "r", encoding="utf-8") as f:
         codebase = f.read()
 
     # Tokenize the codebase
@@ -40,5 +40,5 @@ def get_tokenized_data(code_base_path: str) -> dict:
 
 if __name__ == "__main__":
     # Path to your codebase file
-    tokenized_data = get_tokenized_data("codebase.txt")
+    tokenized_data = get_tokenized_data("./data/codebase.txt")
     print(tokenized_data)
