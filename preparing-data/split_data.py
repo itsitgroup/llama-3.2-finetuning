@@ -42,9 +42,10 @@ def save_split_data(train_ids: list, val_ids: list):
     with open("codebase_dataset.json", "w", encoding="utf-8") as f:
         json.dump(dataset, f, ensure_ascii=False, indent=4)
 
-    # Save training data as plain text
+
     tokenizer = AutoTokenizer.from_pretrained("meta-llama/LLaMA-3.2-3B")
 
+    # Save training data as plain text
     with open("train.txt", "w", encoding="utf-8") as f:
         for ids in train_ids:
             f.write(tokenizer.decode(ids) + "\n")
