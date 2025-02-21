@@ -1,5 +1,6 @@
 from sklearn.model_selection import train_test_split
 from tokenize_data import get_tokenized_data
+import json
 
 def get_split_data(data_path: str, test_size: float = 0.1) -> tuple:
     """
@@ -20,6 +21,34 @@ def get_split_data(data_path: str, test_size: float = 0.1) -> tuple:
     print(f"Training samples: {len(train_ids)}")
     print(f"Validation samples: {len(val_ids)}")
     return  train_ids, val_ids
+
+def save_split_data(train_ids: list, val_ids: list):
+    """
+    Save the split data to JSON files.
+    Args:
+        data_path (str): Path to the original codebase file.
+        train_ids (list): List of token IDs for the training set.
+        val_ids (list): List of token IDs for the validation set.
+    """
+    # Prepare the dataset in a dictionary format
+    dataset = {
+        "train": {"input_ids": train_ids},
+        "validation": {"input_ids": val_ids},
+    }
+
+    # Save the dataset as a JSON file
+    with open("codebase_dataset.json", "w", encoding="utf-8") as f:
+        json.dump(dataset, f, ensure_ascii=False, indent=4)
+
+def split_and_save_data(data_path: str, test_size: float = 0.1):
+    """
+    Split the tokenized data and save the resulting datasets.
+    Args:
+        data_path (str): Path to the original codebase file.
+        test_size (float): The proportion of the dataset to include in the validation set.
+    """
+    train_ids, val_ids = get_split_data(data_path, test_size)
+    save_split_data(data_path, train_ids, val_ids)
 
 if __name__ == "__main__":
     get_split_data("./data/codebase.txt")
