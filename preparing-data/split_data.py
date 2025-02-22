@@ -39,19 +39,19 @@ def save_split_data(train_ids: list, val_ids: list):
     }
 
     # Save the dataset as a JSON file
-    with open("codebase_dataset.json", "w", encoding="utf-8") as f:
+    with open("./data/codebase_dataset.json", "w", encoding="utf-8") as f:
         json.dump(dataset, f, ensure_ascii=False, indent=4)
 
 
     tokenizer = AutoTokenizer.from_pretrained("meta-llama/LLaMA-3.2-3B")
 
     # Save training data as plain text
-    with open("train.txt", "w", encoding="utf-8") as f:
+    with open("./data/train.txt", "w", encoding="utf-8") as f:
         for ids in train_ids:
             f.write(tokenizer.decode(ids) + "\n")
 
     # Save validation data as plain text
-    with open("val.txt", "w", encoding="utf-8") as f:
+    with open("./data/val.txt", "w", encoding="utf-8") as f:
         for ids in val_ids:
             f.write(tokenizer.decode(ids) + "\n")
 
@@ -63,7 +63,7 @@ def split_and_save_data(data_path: str, test_size: float = 0.1):
         test_size (float): The proportion of the dataset to include in the validation set.
     """
     train_ids, val_ids = get_split_data(data_path, test_size)
-    save_split_data(data_path, train_ids, val_ids)
+    save_split_data(train_ids, val_ids)
 
 if __name__ == "__main__":
     split_and_save_data("./data/codebase.txt")
