@@ -4,7 +4,7 @@ from sklearn.model_selection import train_test_split
 from tokenize_data import get_tokenized_data
 import json
 
-def get_split_data(data_path: str, test_size: float = 0.1) -> tuple:
+def get_split_data(data_path: str = "./data/codebase.txt", test_size: float = 0.1) -> tuple:
     """
     Split the tokenized data into training and validation sets.
     Args:
@@ -55,7 +55,7 @@ def save_split_data(train_ids: list, val_ids: list):
         for ids in val_ids:
             f.write(tokenizer.decode(ids) + "\n")
 
-def split_and_save_data(data_path: str, test_size: float = 0.1):
+def split_and_save_data(data_path: str = "./data/codebase.txt", test_size: float = 0.1):
     """
     Split the tokenized data and save the resulting datasets.
     Args:

@@ -21,7 +21,7 @@ def tokenize_codebase(codebase: str, tokenizer: AutoTokenizer) -> dict:
     )
     return tokenized_data
 
-def get_tokenized_data(data_path: str) -> dict:
+def get_tokenized_data(data_path: str = "./data/codebase.txt") -> dict:
     """
     Get the tokenized data for a given codebase file.
     Args:
