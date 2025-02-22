@@ -9,6 +9,10 @@ def tokenize_codebase(codebase: str, tokenizer: AutoTokenizer) -> dict:
     Returns:
         dict: The tokenized data.
     """
+    # Ensure the tokenizer has a padding token
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token  # Use EOS token as padding token
+
     tokenized_data = tokenizer(
         codebase,
         return_tensors="pt",  # Return PyTorch tensors
@@ -17,26 +21,24 @@ def tokenize_codebase(codebase: str, tokenizer: AutoTokenizer) -> dict:
     )
     return tokenized_data
 
-
 def get_tokenized_data(data_path: str) -> dict:
     """
     Get the tokenized data for a given codebase file.
     Args:
-        code_base_path (str): Path to the .txt file containing the codebase.
+        data_path (str): Path to the .txt file containing the codebase.
     Returns:
         dict: The tokenized data.
     """
     # Load the tokenizer for the LLaMA model
     tokenizer = AutoTokenizer.from_pretrained("meta-llama/LLaMA-3.2-3B")
-
+    
     # Read the codebase from the .txt file
     with open(data_path, "r", encoding="utf-8") as f:
         codebase = f.read()
-
+    
     # Tokenize the codebase
     tokenized_data = tokenize_codebase(codebase, tokenizer)
     return tokenized_data
-
 
 if __name__ == "__main__":
     # Path to your codebase file
